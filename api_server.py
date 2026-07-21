@@ -39,10 +39,23 @@ def start_scheduler():
 @app.get("/api/dashboard")
 def get_dashboard(date: Optional[str] = "All", type_pub: Optional[str] = "All", classification: Optional[str] = "All"):
     # 1. Lecture des données
-    try:
-        df = pd.read_parquet("dashboard_data.parquet")
-    except:
-        df = pd.read_csv("dashboard_data.csv")
+    # 1. Lecture des données (Forcé sur CSV avec nettoyage)
+    df = pd.read_csv("dashboard_data.csv", encoding="utf-8-sig")
+    df.columns = [str(col).strip() for col in df.columns]
+
+    # Nettoyage vital des colonnes numériques pour que les sommes fonctionnent
+    numeric_cols = ["AN", "VL", "YTD"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace("%", "", regex=False)
+                .str.replace(",", ".", regex=False)
+                .str.replace(" ", "", regex=False)
+                .replace(["-", "", "nan", "None"], pd.NA)
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # 2. Détection intelligente des colonnes
     col_societe = next((c for c in df.columns if "soci" in c.lower() and "gestion" in c.lower()), "Société de gestion")
