@@ -23,7 +23,9 @@ app.add_middleware(
 def run_sync():
     print("Démarrage de la mise à jour automatique des données (sync.py)...")
     try:
-        subprocess.run(["python", "sync.py"], check=True)
+        # On utilise sys.executable pour garantir qu'on utilise le même Python
+        import sys
+        subprocess.run([sys.executable, "sync.py"], check=True)
         print("Mise à jour terminée avec succès.")
     except Exception as e:
         print(f"Erreur lors de la mise à jour : {e}")
@@ -34,13 +36,26 @@ def start_scheduler():
     # Le script sync.py s'exécutera tous les jours à 00h00
     scheduler.add_job(run_sync, 'cron', hour=0, minute=0)
     scheduler.start()
+    
+    # --- LIGNE AJOUTÉE ICI ---
+    # On force l'exécution de sync.py immédiatement au démarrage
+    # pour que les données soient à jour dès que Render lance le serveur.
+    run_sync()
 # ---------------------------------------------------------
 
 @app.get("/api/dashboard")
 def get_dashboard(date: Optional[str] = "All", type_pub: Optional[str] = "All", classification: Optional[str] = "All"):
-    # 1. Lecture des données
     # 1. Lecture des données (Forcé sur CSV avec nettoyage)
-    df = pd.read_csv("dashboard_data.csv", encoding="utf-8-sig")
+    # On vérifie si le fichier existe, sinon on force un sync
+    if not os.path.exists("dashboard_data.csv"):
+        run_sync()
+        
+    try:
+        df = pd.read_csv("dashboard_data.csv", encoding="utf-8-sig")
+    except Exception as e:
+        print(f"Erreur lecture CSV: {e}")
+        return {"error": "Impossible de lire les données"}
+
     df.columns = [str(col).strip() for col in df.columns]
 
     # Nettoyage vital des colonnes numériques pour que les sommes fonctionnent
@@ -77,7 +92,7 @@ def get_dashboard(date: Optional[str] = "All", type_pub: Optional[str] = "All", 
     types_dispo = sorted(df[col_type].astype(str).dropna().unique().tolist()) if col_type in df.columns else []
     classif_dispo = sorted(df[col_classif].astype(str).dropna().unique().tolist()) if col_classif in df.columns else []
 
-    # 4. Appliquer les filtres demandés par l'interface web (INCLUANT LA CLASSIFICATION)
+    # 4. Appliquer les filtres demandés par l'interface web
     df_filtered = df.copy()
     if date != "All" and col_date in df_filtered.columns:
         df_filtered = df_filtered[df_filtered[col_date].astype(str).str.strip() == date.strip()]
@@ -98,8 +113,11 @@ def get_dashboard(date: Optional[str] = "All", type_pub: Optional[str] = "All", 
             positives = 0
             perf_ytd = 0.0
             if "YTD" in group.columns:
-                positives = int((group["YTD"] > 0).sum())
-                perf_ytd = float(group["YTD"].mean())
+                # Filtrage des valeurs valides pour la moyenne YTD
+                ytd_group = group["YTD"].dropna()
+                positives = int((ytd_group > 0).sum())
+                if not ytd_group.empty:
+                    perf_ytd = float(ytd_group.mean())
 
             classifications = group[col_classif].dropna().unique().tolist() if col_classif in group.columns else []
 
