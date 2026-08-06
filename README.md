@@ -1,16 +1,4 @@
-# ASFIM Business Intelligence
 
-Le pipeline de téléchargement est déjà développé.
-
-Le backend ne doit jamais être modifié.
-
-L'application doit uniquement lire :
-
-- dashboard_data.parquet
-
-ou
-
-- dashboard_data.csv
 
 Objectif :
 
